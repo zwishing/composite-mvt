@@ -1,98 +1,83 @@
-# Composite MVT v1 Design
+# Composite MVT v1 设计说明书
 
-## 1. Purpose
+## 1. 文档目的
 
-`composite-mvt` is a publishable Rust library for combining Mapbox Vector Tile
-(MVT) payloads from a fixed, validated set of sources. Static source metadata is
-created once. Per-request tile bytes are supplied in the same fixed order.
+`composite-mvt` 是一个准备发布到 crates.io 的 Rust 库，用于将一组已经固定并完成校验的数据源所返回的 Mapbox Vector Tile（MVT）组合成一个新的 MVT。数据源的静态元数据只在初始化阶段创建一次；每次请求只需要按照固定顺序提供当前瓦片的字节数据。
 
-The public `MvtComposer::compose` method accepts source payloads in their
-configured compression formats, decompresses only where required, and returns
-one uncompressed composite MVT. Its private raw composition step performs only
-ordered byte concatenation.
+公开方法 `MvtComposer::compose()` 接收各数据源原始或压缩后的输入，根据数据源配置执行必要的解压，然后返回一个未压缩的 Composite MVT。其内部的原始组合步骤只执行按顺序的字节拼接。
 
-The crate will be released under `MIT OR Apache-2.0` and prepared for publication
-to crates.io.
+本项目使用 `MIT OR Apache-2.0` 双许可证，并按可发布到 crates.io 的通用开源库标准交付。
 
-## 2. Goals
+## 2. 第一版目标
 
-Version 1 must:
+第一版必须实现：
 
-- represent source IDs and layer names with strong newtypes;
-- create sources explicitly or derive them from one or more sample tiles;
-- use `fast-mvt 0.6.0` to validate sample MVTs and read layer names;
-- support uncompressed, gzip, zstd, and Brotli source payloads;
-- gate gzip, zstd, and Brotli decoders behind Cargo features;
-- automatically detect uncompressed, gzip, and zstd sample tiles;
-- accept Brotli samples through an explicit compression API;
-- validate source IDs, layer names, duplicate layers, and decoder availability
-  once when building a composer;
-- preserve source order permanently;
-- allow a single `compose` call for sources with different configured input
-  compression formats;
-- ensure the final concatenation step sees only uncompressed MVT bytes;
-- allocate the final output once and copy each raw input exactly once;
-- return immutable `bytes::Bytes`;
-- allow lock-free sharing through `Arc<MvtComposer>`;
-- include publish-quality documentation, examples, feature-matrix tests, and
-  package validation.
+- 使用强类型 newtype 表示数据源 ID 和图层名称；
+- 支持显式创建 `MvtSource`；
+- 支持从单个或多个 MVT 样本中解析并创建 `MvtSource`；
+- 使用 `fast-mvt 0.6.0` 校验样本 MVT 并读取图层名称；
+- 支持未压缩、gzip、zstd 和 Brotli 输入；
+- 通过 Cargo feature 分别控制 gzip、zstd 和 Brotli 解码器；
+- 自动识别未压缩、gzip 和 zstd 样本；
+- 通过显式压缩格式接口读取 Brotli 样本；
+- 在构建 Composer 时一次性校验数据源 ID、图层名称、重名图层、解码器 feature 和压缩格式；
+- 永久固定数据源顺序；
+- 允许一次 `compose()` 调用处理采用不同输入压缩格式的数据源；
+- 保证内部最终拼接步骤只接收已解压的原始 MVT；
+- 最终输出只分配一次内存，并将每个原始输入复制一次；
+- 返回不可变的 `bytes::Bytes`；
+- 支持通过 `Arc<MvtComposer>` 进行无锁并发共享；
+- 提供达到发布质量的文档、示例、feature 组合测试和打包验证。
 
-## 3. Non-goals
+## 3. 第一版不支持的内容
 
-Version 1 will not:
+第一版不支持：
 
-- merge features inside layers;
-- rename duplicate layers;
-- modify geometry, properties, or layer names;
-- parse or encode MVT in the private raw composition step;
-- make HTTP requests or responses;
-- manage caches, retries, fallbacks, TileJSON, or configuration replacement;
-- infer Brotli from a magic number, because the Brotli stream format has no
-  reliable fixed signature;
-- support `Compression::Other` inside a composer;
-- return a compressed composite payload.
+- 合并同名图层中的 feature；
+- 自动重命名图层；
+- 修改 geometry、属性或图层名称；
+- 在内部原始拼接阶段解析或编码 MVT；
+- HTTP 请求或响应；
+- 缓存、重试、降级、TileJSON 或配置替换；
+- 通过 magic number 猜测 Brotli，因为 Brotli 流没有可靠的固定文件签名；
+- 在 Composer 中使用 `Compression::Other`；
+- 返回已经压缩的 Composite MVT。
 
-Applications that need an HTTP `Content-Encoding` must compress the final
-composite payload as one stream. They must not concatenate independently
-compressed gzip responses and serve the result as a single gzip-encoded HTTP
-representation; browser network stacks do not reliably decode all gzip members.
+如果应用需要设置 HTTP `Content-Encoding`，必须在 Composite MVT 生成完成后，对完整结果进行一次整体压缩。不得将多个独立 gzip 数据直接拼接后作为一个 gzip HTTP 响应返回，因为浏览器网络栈不能可靠地解码其中的全部 gzip member。
 
-## 4. Architecture
+## 4. 总体架构
 
-The design has four boundaries:
+系统划分为四个明确边界：
 
-1. `MvtSource` stores the fixed ID, expected request compression, and layer set.
-2. `MvtComposerBuilder` validates all static configuration once.
-3. Public `MvtComposer::compose` checks input count and prepares each input by
-   borrowing it when uncompressed or calling the source decoder when compressed.
-4. Private `MvtComposer::compose_raw` concatenates prepared raw MVT bytes in
-   source order.
+1. `MvtSource` 保存固定的数据源 ID、请求输入所采用的压缩格式和图层集合。
+2. `MvtComposerBuilder` 在初始化阶段一次性校验全部静态配置。
+3. 公开的 `MvtComposer::compose()` 校验输入数量；未压缩输入直接借用，压缩输入通过对应 `MvtSource` 解压。
+4. 私有的 `MvtComposer::compose_raw()` 只将准备好的原始 MVT 按数据源顺序拼接。
 
 ```text
-configured MvtSource list
+固定的 MvtSource 列表
         +
-per-request input bytes
-        |
-        v
-MvtComposer::compose
-  - validate input count
-  - None: borrow input
-  - Gzip/Zstd/Brotli: decompress input
-        |
-        v
-private compose_raw
-  - checked total length
-  - one output allocation
-  - ordered byte copies
-        |
-        v
-uncompressed composite MVT Bytes
+每次请求的输入 bytes
+        │
+        ▼
+MvtComposer::compose()
+  - 校验输入数量
+  - None：直接借用输入
+  - Gzip/Zstd/Brotli：解压输入
+        │
+        ▼
+私有 compose_raw()
+  - 检查并计算总长度
+  - 一次性申请输出空间
+  - 按顺序复制字节
+        │
+        ▼
+未压缩的 Composite MVT Bytes
 ```
 
-`MvtComposer` is immutable after construction. It contains no mutex, read-write
-lock, cache, or mutable request state.
+`MvtComposer` 构建完成后不可修改。它不包含 `Mutex`、`RwLock`、缓存或任何请求级可变状态。
 
-## 5. Core types
+## 5. 核心类型
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -133,15 +118,13 @@ pub struct MvtComposer {
 }
 ```
 
-`CompressionMode` is removed. Sources may have different input compression
-formats because all compressed inputs are decoded before raw composition.
+删除原需求中的 `CompressionMode`。不同数据源可以采用不同的输入压缩格式，因为全部压缩输入都会在原始拼接之前完成解压。
 
-## 6. Public API
+## 6. 公开 API
 
-### 6.1 Source construction and inspection
+### 6.1 创建和读取 MvtSource
 
-Builder-style setters use `with_` names so getters can use the natural field
-names.
+链式设置方法使用 `with_` 前缀，使 getter 可以直接使用自然的字段名称。
 
 ```rust
 impl MvtSource {
@@ -193,30 +176,24 @@ impl MvtSource {
 }
 ```
 
-`MvtSource::new` defaults to `Compression::None` and no layers. A source without
-layers may exist temporarily but cannot be added to a successful composer.
+`MvtSource::new()` 默认使用 `Compression::None`，图层列表默认为空。没有图层的 source 可以作为尚未配置完成的临时对象存在，但不能构建出合法的 Composer。
 
-`decompress` returns `Cow::Borrowed` for `Compression::None` and `Cow::Owned`
-for enabled compressed formats. It returns an error for a disabled decoder,
-invalid compressed input, or `Compression::Other`.
+`decompress()` 在 `Compression::None` 时返回 `Cow::Borrowed`，不执行复制；在启用相应 feature 的压缩格式下返回 `Cow::Owned`。如果解码器 feature 未启用、压缩数据无效或格式为 `Compression::Other`，则返回错误。
 
-### 6.2 Automatic sample detection
+### 6.2 自动识别样本压缩格式
 
-`from_mvt` and `from_mvts` use this deterministic order:
+`from_mvt()` 和 `from_mvts()` 按以下固定顺序识别：
 
-1. Detect gzip by the RFC 1952 `1f 8b` signature.
-2. Detect standard zstd frames by the RFC 8878 `28 b5 2f fd` signature and
-   zstd skippable frames by their `50..5f 2a 4d 18` signature range.
-3. Otherwise parse the bytes as an uncompressed MVT.
+1. 使用 RFC 1952 的 `1f 8b` 签名识别 gzip；
+2. 使用 RFC 8878 的 `28 b5 2f fd` 签名识别标准 zstd frame；
+3. 使用 `50..5f 2a 4d 18` 签名范围识别 zstd skippable frame；
+4. 未匹配已知签名时，按未压缩 MVT 进行解析。
 
-They do not guess Brotli. Brotli callers use the explicit compression variants.
-The explicit `Compression::Other` value is rejected because the library has no
-decoder for it.
+自动接口不猜测 Brotli。Brotli 调用方必须使用显式压缩格式方法。`Compression::Other` 也不能用于解析，因为本库不知道对应的解码器。
 
-All samples passed to automatic `from_mvts` must resolve to the same compression
-format. Layer names are deduplicated while preserving first-observed order.
+自动版 `from_mvts()` 要求所有样本最终识别为相同压缩格式。多个样本的图层名称取并集，并保持第一次观察到该图层时的顺序。
 
-### 6.3 Composer construction
+### 6.3 构建 MvtComposer
 
 ```rust
 impl MvtComposer {
@@ -230,21 +207,20 @@ impl MvtComposerBuilder {
 }
 ```
 
-`DuplicateLayer::Error` is the default. `build` validates:
+`DuplicateLayer::Error` 是默认策略。`build()` 依次校验：
 
-1. at least one source exists;
-2. source IDs are unique;
-3. every source contains at least one layer;
-4. layer names are non-empty;
-5. layer names are unique within each source;
-6. cross-source duplicate layers obey `DuplicateLayer`;
-7. every configured compressed format has its Cargo decoder feature enabled;
-8. no source uses `Compression::Other`.
+1. 至少存在一个 source；
+2. source ID 不重复；
+3. 每个 source 至少包含一个图层；
+4. 图层名称非空；
+5. 同一个 source 内部不存在重复图层；
+6. 不同 source 之间的同名图层符合 `DuplicateLayer` 配置；
+7. 每个压缩 source 所需的 Cargo 解码器 feature 已启用；
+8. 不存在使用 `Compression::Other` 的 source。
 
-Successful construction fixes the source order and produces an immutable
-composer.
+构建成功后，source 顺序永久固定，并生成不可变的 `MvtComposer`。
 
-### 6.4 Composition
+### 6.4 组合 MVT
 
 ```rust
 impl MvtComposer {
@@ -260,30 +236,26 @@ impl MvtComposer {
 }
 ```
 
-`compose` maps `inputs[n]` to `sources[n]`. It checks the count before doing any
-work. Each source then prepares its corresponding input according to its fixed
-compression metadata. If any decoder fails, composition stops without returning
-a partial result.
+`compose()` 按索引建立固定对应关系：`inputs[n]` 对应 `sources[n]`。它首先校验输入数量，然后根据每个 source 的固定压缩元数据准备对应输入。任意解码失败都会立即终止组合，不返回部分结果。
 
-`compose_raw` is private and receives only prepared, uncompressed MVT byte
-slices. It uses checked length addition, one `BytesMut` allocation, ordered
-`extend_from_slice` calls, and `freeze`.
+`compose_raw()` 是私有方法，只接收已经准备好的未压缩 MVT。它使用 checked addition 计算总长度，通过 `BytesMut` 一次性申请输出空间，按顺序执行 `extend_from_slice()`，最后调用 `freeze()` 返回不可变 `Bytes`。
 
-The raw step deliberately does not validate protobuf or inspect layers. A
-successfully decompressed but malformed request tile therefore remains the
-caller's data-integrity responsibility.
+原始拼接步骤有意不校验 protobuf，也不读取图层。已经成功解压、但请求数据本身不是合法 MVT 的情况属于调用方的数据完整性责任。
 
-## 7. Errors
+## 7. 错误设计
 
-All public errors derive `thiserror::Error` using `thiserror 2`. Decoder failures
-retain an error source chain without exposing optional decoder crate types as
-stable public API.
+全部公开错误均使用 `thiserror 2` 派生 `thiserror::Error`。解码失败保留底层错误链，但不会将可选压缩依赖的具体错误类型固化为稳定公开 API。
 
 ```rust
 pub enum SourceError {
     EmptyBytes,
-    CompressionFeatureDisabled { compression: Compression },
-    UnsupportedCompression { compression: Compression },
+    NoSamples,
+    CompressionFeatureDisabled {
+        compression: Compression,
+    },
+    UnsupportedCompression {
+        compression: Compression,
+    },
     DecompressionFailed {
         compression: Compression,
         source: Box<dyn std::error::Error + Send + Sync>,
@@ -300,9 +272,15 @@ pub enum SourceError {
 
 pub enum BuildError {
     NoSources,
-    DuplicateSourceId { id: SourceId },
-    NoLayers { source_id: SourceId },
-    EmptyLayerName { source_id: SourceId },
+    DuplicateSourceId {
+        id: SourceId,
+    },
+    NoLayers {
+        source_id: SourceId,
+    },
+    EmptyLayerName {
+        source_id: SourceId,
+    },
     DuplicateLayerName {
         layer: LayerName,
         first_source: SourceId,
@@ -319,7 +297,10 @@ pub enum BuildError {
 }
 
 pub enum ComposeError {
-    InputCountMismatch { expected: usize, actual: usize },
+    InputCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
     SourceDecompression {
         source_id: SourceId,
         source: SourceError,
@@ -328,11 +309,9 @@ pub enum ComposeError {
 }
 ```
 
-Actual Rust definitions use explicit `#[error]` display messages and `#[source]`
-attributes. Error messages include relevant source, layer, and compression
-values.
+实际 Rust 定义为每个 variant 提供明确的 `#[error]` 展示消息，并通过 `#[source]` 连接底层错误。错误文本包含相关 source、layer 和 compression 上下文。
 
-## 8. Cargo features and dependencies
+## 8. Cargo features 与依赖
 
 ```toml
 [dependencies]
@@ -350,130 +329,111 @@ zstd = ["dep:zstd"]
 brotli = ["dep:brotli"]
 ```
 
-These are the current stable compatible release lines selected for the initial
-implementation. `Cargo.lock` records the exact resolved dependency graph, while
-the published manifest keeps the normal semver requirements shown above.
+以上版本是首版实现所选用的当前稳定兼容版本线。`Cargo.lock` 记录实际解析出的完整依赖图，发布清单则保留上述常规 semver 约束。
 
-The crate uses Rust 2024 Edition. Its declared MSRV is the highest MSRV required
-by `fast-mvt 0.6.0` and the selected dependency set, but never lower than Rust
-1.85. The resolved value is documented and tested before publication.
+项目使用 Rust 2024 Edition。声明的最低 Rust 版本为 `fast-mvt 0.6.0` 与全部所选依赖实际要求中的最高值，但不会低于 Rust 1.85。实现阶段必须验证并记录最终 MSRV。
 
-## 9. Modules
+## 9. 模块结构
 
 ```text
 src/
-|- lib.rs
-|- builder.rs
-|- composer.rs
-|- compression.rs
-|- duplicate_layer.rs
-|- error.rs
-|- source.rs
-`- source_reader/
-   |- mod.rs
-   |- mvt.rs
-   |- gzip.rs
-   |- zstd.rs
-   `- brotli.rs
+├── lib.rs
+├── builder.rs
+├── composer.rs
+├── compression.rs
+├── duplicate_layer.rs
+├── error.rs
+├── source.rs
+└── source_reader/
+    ├── mod.rs
+    ├── mvt.rs
+    ├── gzip.rs
+    ├── zstd.rs
+    └── brotli.rs
 ```
 
-The source reader is used for sample inspection and for per-request source
-decompression. The private raw composition implementation has no dependency on
-`fast-mvt` or decoder modules.
+`source_reader` 同时服务于初始化阶段的样本读取和请求阶段的 source 解压。私有的原始组合实现不依赖 `fast-mvt` 或任何压缩解码模块。
 
-## 10. Concurrency and configuration replacement
+## 10. 并发与配置替换
 
-`MvtComposer` is composed only of immutable owned metadata and is `Send + Sync`
-when its fields are. Applications share it as `Arc<MvtComposer>` without locks.
-Each `compose` invocation owns its decompression buffers and final output.
+`MvtComposer` 只包含不可变的自有元数据，因此满足字段所允许的 `Send + Sync`。应用通过 `Arc<MvtComposer>` 在多个线程或异步请求之间共享，无需加锁。每次 `compose()` 调用独立拥有自己的解压缓冲区和最终输出。
 
-Configuration replacement is an integration concern. An application may build
-a new composer, validate it fully, and atomically replace an old `Arc` with
-`arc-swap`. `arc-swap` is not a dependency of this crate.
+配置替换属于业务集成层职责。应用可以构建并完整校验新的 Composer，再使用 `arc-swap` 原子替换旧的 `Arc`。本库不强制依赖 `arc-swap`。
 
-## 11. Testing and acceptance
+## 11. 测试与验收标准
 
-### 11.1 Source tests
+### 11.1 Source 测试
 
-- explicit uncompressed source construction;
-- uncompressed, gzip, zstd, and Brotli sample parsing;
-- gzip/zstd automatic detection;
-- explicit Brotli parsing;
-- empty and invalid bytes;
-- no layers, missing names, empty names, and multiple layers;
-- duplicate names in one sample;
-- multi-sample union with stable first-observed order;
-- inconsistent automatically detected sample compression;
-- each disabled decoder feature;
-- `Compression::None` returns borrowed bytes;
-- compressed formats return owned decompressed bytes.
+- 显式创建未压缩 source；
+- 解析未压缩、gzip、zstd 和 Brotli 样本；
+- 自动识别 gzip 和 zstd；
+- 显式解析 Brotli；
+- 空字节与非法 MVT；
+- `from_mvts()` 接收到空样本集合；
+- 无图层、缺少图层名、空图层名和多个图层；
+- 单个样本中的重复图层名；
+- 多样本图层并集及第一次出现顺序；
+- 自动识别样本的压缩格式不一致；
+- 各解码器 feature 未启用；
+- `Compression::None` 返回 borrowed bytes；
+- 压缩格式返回 owned 解压结果。
 
-### 11.2 Builder tests
+### 11.2 Builder 测试
 
-- no sources;
-- duplicate source ID;
-- source with no layers;
-- empty layer name;
-- duplicate layer within one source;
-- duplicate layer across sources in `Allow` and `Error` modes;
-- disabled compression feature;
-- `Compression::Other`;
-- successful construction and stable source order.
+- 无 source；
+- 重复 source ID；
+- source 不含图层；
+- 空图层名；
+- 同一 source 内部图层重名；
+- 不同 source 图层重名时的 `Allow` 和 `Error`；
+- 压缩 feature 未启用；
+- `Compression::Other`；
+- 正常构建并保持 source 顺序。
 
-### 11.3 Composition tests
+### 11.3 Compose 测试
 
-- one and multiple sources;
-- too few and too many inputs;
-- empty raw MVT bytes;
-- source-order preservation;
-- all-uncompressed inputs;
-- mixed uncompressed, gzip, zstd, and Brotli inputs;
-- source-specific decompression failure with source ID context;
-- output independence and input immutability;
-- size arithmetic is covered through a testable checked-length helper because
-  allocating `usize::MAX` bytes is not a viable test;
-- `Arc<MvtComposer>` shared by multiple threads with independent results.
+- 单 source 和多 source；
+- 输入数量不足和过多；
+- 空的原始 MVT bytes；
+- 保持 source 顺序；
+- 全部输入未压缩；
+- 混合未压缩、gzip、zstd 和 Brotli 输入；
+- 解压错误包含对应 source ID；
+- 输出相互独立且不修改输入；
+- 通过可单独测试的 checked-length helper 覆盖长度溢出，因为实际申请 `usize::MAX` 字节不可行；
+- 多线程共享同一个 `Arc<MvtComposer>`，结果相互独立。
 
-### 11.4 End-to-end and Web compatibility tests
+### 11.4 端到端与 Web 兼容测试
 
-Tests build independent sample MVTs with the `fast-mvt` writer, encode them in
-the configured source formats, call public `compose` once, and read the resulting
-uncompressed composite with `fast-mvt`. All expected layers must be present in
-the fixed order.
+测试使用 `fast-mvt` writer 构建多个独立样本 MVT，按照 source 配置分别压缩，只调用一次公开的 `compose()`，再使用 `fast-mvt` 读取返回的未压缩 Composite MVT。全部预期图层必须存在，并保持固定顺序。
 
-A Web compatibility test gzip-compresses the final composite as one gzip member,
-decompresses it, and again verifies every layer. Documentation states that this
-single final compression is the supported HTTP delivery pattern.
+Web 兼容测试对最终 Composite MVT 整体 gzip 一次，解压后再次验证全部图层。文档明确将“最终结果整体压缩”定义为受支持的 HTTP 交付方式。
 
-### 11.5 Verification matrix
+### 11.5 发布前验证矩阵
 
-Before release, the project must pass:
+发布前必须通过：
 
-- `cargo fmt --check`;
-- `cargo clippy --all-targets --all-features -- -D warnings`;
-- tests with no default features;
-- tests with default gzip;
-- tests with each optional decoder independently;
-- tests with all features;
-- documentation tests;
-- release build;
-- `cargo package` or `cargo publish --dry-run` without publishing.
+- `cargo fmt --check`；
+- `cargo clippy --all-targets --all-features -- -D warnings`；
+- 无默认 feature 的测试；
+- 默认 gzip feature 的测试；
+- 每个可选解码器单独启用时的测试；
+- 全部 feature 同时启用时的测试；
+- rustdoc 文档测试；
+- release build；
+- `cargo package` 或 `cargo publish --dry-run`，但不实际发布。
 
-An example program serves as manual library QA: it creates sources with mixed
-input compression, composes them, and proves through `fast-mvt` that every layer
-is readable from the returned payload.
+示例程序作为库的手工验收入口：创建使用混合输入压缩格式的 sources，执行组合，并通过 `fast-mvt` 证明返回值中的每个图层均可读取。
 
-## 12. Publishability
+## 12. crates.io 发布质量要求
 
-The repository includes:
+仓库必须包含：
 
-- `README.md` with quick start, feature table, compression semantics, concurrency
-  example, and HTTP delivery warning;
-- `LICENSE-MIT` and `LICENSE-APACHE`;
-- complete crate metadata, categories, keywords, documentation URL, and MSRV;
-- public rustdoc for all exported items and errors;
-- a changelog starting at version `0.1.0`;
-- no publication action as part of implementation unless separately requested.
+- `README.md`，提供快速开始、feature 表、压缩语义、并发示例和 HTTP 交付警告；
+- `LICENSE-MIT` 与 `LICENSE-APACHE`；
+- 完整的 crate 元数据、categories、keywords、文档地址和 MSRV；
+- 所有公开类型、方法和错误的 rustdoc；
+- 从 `0.1.0` 开始的 changelog；
+- 除非用户另行明确要求，否则实现任务不执行实际发布。
 
-Repository and homepage metadata are included only when a real public repository
-URL is available; no placeholder URL is published.
+只有在存在真实公共仓库地址时才写入 repository 和 homepage 元数据；不得发布占位 URL。
