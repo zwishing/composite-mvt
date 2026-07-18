@@ -17,5 +17,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Independent duplicate-layer validation with configurable `Allow` and `Error` policies.
 - Lock-free sharing of a built composer and independent request results.
 - One-pass, whole-composite output compression suitable for HTTP `Content-Encoding` delivery.
-- Rustdoc, README, example, feature-matrix, package, and MSRV release verification for the first
-  publishable crate.
+- Rustdoc, README, example, feature-matrix, and package verification for the first publishable
+  crate, with a documented Rust 1.87 MSRV. Exact Rust 1.87 verification remains pending because
+  the configured mirror returned HTTP 404 and the official-source cargo download stalled.
