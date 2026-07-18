@@ -217,9 +217,19 @@ impl MvtComposerBuilder {
     pub fn duplicate_layer(self, behavior: DuplicateLayer) -> Self;
     pub fn output_compression(self, compression: Compression) -> Self;
     pub fn add_source(self, source: MvtSource) -> Self;
+    pub fn validate_duplicate_layers(&self) -> Result<(), BuildError>;
     pub fn build(self) -> Result<MvtComposer, BuildError>;
 }
 ```
+
+`validate_duplicate_layers()` 是可独立调用的公开校验方法：
+
+- 同一个 source 内部出现重复图层时始终返回 `BuildError::DuplicateLayerName`；
+- 不同 source 之间出现同名图层时，根据 `DuplicateLayer` 返回错误或允许通过；
+- 方法只读取 Builder 当前状态，不消费或修改 Builder；
+- `build()` 必须复用同一套内部实现，不得复制或绕过该校验逻辑。
+
+`MvtComposer` 不提供重复图层校验方法，因为成功构建的 Composer 已经满足 Builder 建立的不变量。
 
 `DuplicateLayer::Error` 是默认重名策略，`Compression::None` 是默认输出格式。`build()` 依次校验：
 
@@ -424,6 +434,7 @@ src/
 - 空图层名；
 - 同一 source 内部图层重名；
 - 不同 source 图层重名时的 `Allow` 和 `Error`；
+- 独立调用 `validate_duplicate_layers()` 与 `build()` 得到一致结果；
 - 压缩 feature 未启用；
 - `Compression::Other`；
 - 正常构建并保持 source 顺序。
