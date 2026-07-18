@@ -7,4 +7,4 @@ mod source;
 
 pub use duplicate_layer::DuplicateLayer;
 pub use error::{BuildError, ComposeError, SourceError};
-pub use source::{Compression, LayerName, SourceId};
+pub use source::{Compression, LayerName, MvtSource, SourceId};
