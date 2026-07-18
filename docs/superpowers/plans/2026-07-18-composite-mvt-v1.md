@@ -51,7 +51,7 @@ examples/mixed_sources.rs         手工 QA 示例
 
 ---
 
-### 任务 1：初始化发布级 crate 与基础公开类型
+### Task 1：初始化发布级 crate 与基础公开类型
 
 **文件：**
 - 创建：`Cargo.toml`
@@ -376,7 +376,7 @@ git commit -m "Create a stable public foundation for MVT composition" -m "Constr
 
 ---
 
-### 任务 2：实现压缩检测、输入解压和整体输出编码
+### Task 2：实现压缩检测、输入解压和整体输出编码
 
 **文件：**
 - 修改：`src/compression.rs`
@@ -661,7 +661,7 @@ git commit -m "Centralize compression boundaries around complete MVT payloads" -
 
 ---
 
-### 任务 3：实现 MvtSource 显式构造、样本解析和多样本并集
+### Task 3：实现 MvtSource 显式构造、样本解析和多样本并集
 
 **文件：**
 - 修改：`src/source.rs`
@@ -996,7 +996,7 @@ git commit -m "Derive stable source metadata from representative MVT samples" -m
 
 ---
 
-### 任务 4：实现 Builder、独立重复图层校验和不可变 Composer
+### Task 4：实现 Builder、独立重复图层校验和不可变 Composer
 
 **文件：**
 - 修改：`src/lib.rs`
@@ -1346,7 +1346,7 @@ git commit -m "Prevent invalid source and output configurations from becoming co
 
 ---
 
-### 任务 5：实现原始拼接、输入解压与固定输出压缩
+### Task 5：实现原始拼接、输入解压与固定输出压缩
 
 **文件：**
 - 修改：`src/composer.rs`
@@ -1550,7 +1550,7 @@ git commit -m "Keep raw MVT concatenation deterministic behind one compose call"
 
 ---
 
-### 任务 6：完成端到端格式、并发和 Web 交付验证
+### Task 6：完成端到端格式、并发和 Web 交付验证
 
 **文件：**
 - 修改：`tests/common/mod.rs`
@@ -1862,7 +1862,7 @@ git commit -m "Prove mixed source and output encodings preserve every MVT layer"
 
 ---
 
-### 任务 7：完成 rustdoc、README、变更记录和发布验证
+### Task 7：完成 rustdoc、README、变更记录和发布验证
 
 **文件：**
 - 修改：`src/lib.rs`
