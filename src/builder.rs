@@ -3,6 +3,10 @@ use std::collections::{HashMap, HashSet};
 use crate::compression::feature_enabled;
 use crate::{BuildError, Compression, DuplicateLayer, LayerName, MvtComposer, MvtSource, SourceId};
 
+/// Configures the immutable source list and output encoding for an [`MvtComposer`].
+///
+/// Source configuration is fixed when [`Self::build`] succeeds. Request bytes are supplied later
+/// to [`MvtComposer::compose`], in the same order as sources are added here.
 pub struct MvtComposerBuilder {
     sources: Vec<MvtSource>,
     duplicate_layer: DuplicateLayer,
@@ -20,24 +24,41 @@ impl Default for MvtComposerBuilder {
 }
 
 impl MvtComposerBuilder {
+    /// Sets how equal layer names in separate sources are handled.
+    ///
+    /// [`DuplicateLayer::Error`] is the default. A duplicate within one source is always an error,
+    /// regardless of this policy.
     #[must_use]
     pub fn duplicate_layer(mut self, behavior: DuplicateLayer) -> Self {
         self.duplicate_layer = behavior;
         self
     }
 
+    /// Sets the encoding applied once to the complete composite output.
+    ///
+    /// This setting is fixed in the built composer; it is not selected per request. The required
+    /// Cargo feature must be enabled for a non-raw encoding.
     #[must_use]
     pub fn output_compression(mut self, compression: Compression) -> Self {
         self.output_compression = compression;
         self
     }
 
+    /// Adds a source to the fixed input order.
+    ///
+    /// Each [`MvtComposer::compose`] call must provide exactly one byte slice for every source, in
+    /// this order.
     #[must_use]
     pub fn add_source(mut self, source: MvtSource) -> Self {
         self.sources.push(source);
         self
     }
 
+    /// Validates duplicate layer names without consuming or changing this builder.
+    ///
+    /// A duplicate within one source always returns [`BuildError::DuplicateLayerName`]. A duplicate
+    /// across sources returns that error only under [`DuplicateLayer::Error`]; it is accepted under
+    /// [`DuplicateLayer::Allow`]. [`Self::build`] reuses this validation.
     pub fn validate_duplicate_layers(&self) -> Result<(), BuildError> {
         let mut global: HashMap<&LayerName, &SourceId> = HashMap::new();
 
@@ -69,6 +90,10 @@ impl MvtComposerBuilder {
         Ok(())
     }
 
+    /// Validates all configuration and constructs an immutable, lock-free composer.
+    ///
+    /// In addition to duplicate-layer validation, this checks source IDs, required source layers,
+    /// and feature support for source and output encodings.
     pub fn build(self) -> Result<MvtComposer, BuildError> {
         self.validate()?;
 

@@ -1,3 +1,6 @@
+#![doc = include_str!("../README.md")]
+#![forbid(unsafe_code)]
+
 mod builder;
 mod composer;
 mod compression;

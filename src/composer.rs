@@ -19,27 +19,49 @@ fn checked_total_from_lengths(
     })
 }
 
+/// An immutable composition plan for fixed MVT sources.
+///
+/// A composer contains only owned configuration and can be shared as `Arc<MvtComposer>` without
+/// library-managed locks. Each [`Self::compose`] call owns its decompression and output buffers.
 pub struct MvtComposer {
     pub(crate) sources: Box<[MvtSource]>,
     pub(crate) output_compression: Compression,
 }
 
 impl MvtComposer {
+    /// Starts configuring a composer.
     #[must_use]
     pub fn builder() -> MvtComposerBuilder {
         MvtComposerBuilder::default()
     }
 
+    /// Returns the fixed sources in the input order used by [`Self::compose`].
     #[must_use]
     pub fn sources(&self) -> &[MvtSource] {
         &self.sources
     }
 
+    /// Returns the fixed output encoding selected during building.
     #[must_use]
     pub const fn output_compression(&self) -> Compression {
         self.output_compression
     }
 
+    /// Composes one input per configured source, preserving source order.
+    ///
+    /// `inputs[n]` is decoded according to `self.sources()[n].compression()`. Raw source inputs
+    /// are borrowed while compressed inputs are decoded before the internal raw-only merge. The
+    /// merged bytes are then returned raw or encoded once using [`Self::output_compression`].
+    ///
+    /// A gzip output is one gzip member containing the complete composite MVT, suitable for an
+    /// HTTP response with `Content-Encoding: gzip`. This crate returns bytes only; callers set HTTP
+    /// headers themselves via [`Compression::content_encoding`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ComposeError::InputCountMismatch`] when the input count differs from the fixed
+    /// source count, [`ComposeError::SourceDecompression`] when a configured input cannot be
+    /// decoded, or a compression/size error while producing the result.
     pub fn compose<B>(&self, inputs: &[B]) -> Result<Bytes, ComposeError>
     where
         B: AsRef<[u8]>,

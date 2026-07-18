@@ -8,7 +8,8 @@ use crate::SourceError;
 use crate::compression::{decompress, detect_compression};
 
 macro_rules! string_newtype {
-    ($name:ident) => {
+    ($name:ident, $description:literal) => {
+        #[doc = $description]
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         pub struct $name(Box<str>);
 
@@ -38,19 +39,36 @@ macro_rules! string_newtype {
     };
 }
 
-string_newtype!(SourceId);
-string_newtype!(LayerName);
+string_newtype!(SourceId, "An owned identifier for a configured MVT source.");
+string_newtype!(
+    LayerName,
+    "An owned name of a layer declared by an MVT source."
+);
 
+/// Compression associated with source input or the complete output.
+///
+/// `Gzip`, `Zstd`, and `Brotli` require Cargo features of the same lowercase names. `gzip` is
+/// enabled by default; `zstd` and `brotli` are optional. [`Self::Other`] is a marker for an
+/// unsupported external format and cannot be used to build a composer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Compression {
+    /// Raw, uncompressed bytes.
     None,
+    /// RFC 1952 gzip bytes, enabled by the `gzip` feature.
     Gzip,
+    /// Zstandard bytes, enabled by the `zstd` feature.
     Zstd,
+    /// Brotli bytes, enabled by the `brotli` feature.
     Brotli,
+    /// An external encoding unsupported by this crate.
     Other,
 }
 
 impl Compression {
+    /// Returns the HTTP `Content-Encoding` token for a supported compressed output.
+    ///
+    /// The mappings are gzip to `gzip`, Zstandard to `zstd`, and Brotli to `br`. Raw and unknown
+    /// encodings return `None`, so callers should omit `Content-Encoding` for them.
     #[must_use]
     pub const fn content_encoding(self) -> Option<&'static str> {
         match self {
@@ -74,6 +92,10 @@ impl fmt::Display for Compression {
     }
 }
 
+/// Fixed metadata for one source in an [`crate::MvtComposer`].
+///
+/// The source's compression setting controls both sample parsing and each later request input.
+/// It is configuration, not a request-time guess.
 #[derive(Debug, Clone)]
 pub struct MvtSource {
     id: SourceId,
@@ -82,6 +104,9 @@ pub struct MvtSource {
 }
 
 impl MvtSource {
+    /// Creates a raw source with no declared layers.
+    ///
+    /// Add layers with [`Self::with_layers`] before using this source in a composer.
     #[must_use]
     pub fn new(id: impl Into<SourceId>) -> Self {
         Self {
@@ -91,12 +116,17 @@ impl MvtSource {
         }
     }
 
+    /// Sets the fixed compression format expected for this source's request bytes.
+    ///
+    /// Brotli input must be declared explicitly. The automatic sample constructors deliberately do
+    /// not detect Brotli because it has no reliable signature.
     #[must_use]
     pub fn with_compression(mut self, compression: Compression) -> Self {
         self.compression = compression;
         self
     }
 
+    /// Replaces the source's declared layers.
     #[must_use]
     pub fn with_layers<I, S>(mut self, layers: I) -> Self
     where
@@ -107,6 +137,16 @@ impl MvtSource {
         self
     }
 
+    /// Reads source metadata from one representative MVT sample.
+    ///
+    /// This constructor detects gzip and Zstandard signatures, otherwise treating bytes as raw
+    /// MVT. It deliberately does not auto-detect Brotli; use
+    /// [`Self::from_mvt_with_compression`] with [`Compression::Brotli`] instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SourceError`] for empty input, disabled or invalid compression, or invalid MVT
+    /// data.
     pub fn from_mvt(id: impl Into<SourceId>, bytes: &[u8]) -> Result<Self, SourceError> {
         if bytes.is_empty() {
             return Err(SourceError::EmptyBytes);
@@ -115,6 +155,13 @@ impl MvtSource {
         Self::from_mvt_with_compression(id, bytes, detect_compression(bytes))
     }
 
+    /// Reads source metadata from one sample using an explicitly declared compression format.
+    ///
+    /// Use this constructor for Brotli and whenever the input encoding is known externally.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SourceError`] when the sample cannot be decoded or is not a usable MVT.
     pub fn from_mvt_with_compression(
         id: impl Into<SourceId>,
         bytes: &[u8],
@@ -132,6 +179,14 @@ impl MvtSource {
         })
     }
 
+    /// Reads and unions layers from multiple representative samples with auto-detected encoding.
+    ///
+    /// All samples must detect as the same raw, gzip, or Zstandard format. Brotli is not
+    /// auto-detected; use [`Self::from_mvts_with_compression`] for Brotli samples.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SourceError`] for no samples, inconsistent detected encodings, or invalid input.
     pub fn from_mvts<I, B>(id: impl Into<SourceId>, inputs: I) -> Result<Self, SourceError>
     where
         I: IntoIterator<Item = B>,
@@ -151,6 +206,13 @@ impl MvtSource {
         Self::from_mvts_with_compression(id, inputs, expected)
     }
 
+    /// Reads and unions layers from multiple samples using an explicit compression format.
+    ///
+    /// Layers retain the order of their first occurrence across the samples.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SourceError`] when any sample is empty, cannot be decoded, or is invalid MVT.
     pub fn from_mvts_with_compression<I, B>(
         id: impl Into<SourceId>,
         inputs: I,
@@ -189,20 +251,31 @@ impl MvtSource {
         })
     }
 
+    /// Decodes request bytes according to this source's fixed compression.
+    ///
+    /// Raw input is returned as [`Cow::Borrowed`]; compressed input is returned as owned decoded
+    /// bytes. This method does not inspect bytes to choose a codec.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SourceError`] when the configured feature is disabled or decoding fails.
     pub fn decompress<'a>(&self, input: &'a [u8]) -> Result<Cow<'a, [u8]>, SourceError> {
         decompress(self.compression, input)
     }
 
+    /// Returns this source's stable identifier.
     #[must_use]
     pub fn id(&self) -> &SourceId {
         &self.id
     }
 
+    /// Returns the fixed compression expected for this source's inputs.
     #[must_use]
     pub const fn compression(&self) -> Compression {
         self.compression
     }
 
+    /// Returns the fixed layer names in declaration order.
     #[must_use]
     pub fn layers(&self) -> &[LayerName] {
         &self.layers
