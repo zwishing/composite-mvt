@@ -1,6 +1,16 @@
 #[cfg(any(feature = "gzip", feature = "zstd", feature = "brotli"))]
 mod common;
+#[path = "composition/concurrency.rs"]
+mod concurrency;
+#[cfg(any(feature = "gzip", feature = "zstd", feature = "brotli"))]
+#[path = "composition/e2e.rs"]
+mod e2e;
+#[cfg(any(feature = "gzip", feature = "zstd", feature = "brotli"))]
+#[path = "composition/fixtures.rs"]
+mod fixtures;
 
+#[cfg(any(feature = "gzip", feature = "zstd", feature = "brotli"))]
+use composite_mvt::Compression;
 use composite_mvt::{ComposeError, MvtComposer, MvtSource};
 
 fn composer(ids: &[&str]) -> MvtComposer {
@@ -10,19 +20,6 @@ fn composer(ids: &[&str]) -> MvtComposer {
         })
         .build()
         .unwrap()
-}
-
-#[cfg(feature = "zstd")]
-fn zstd(input: &[u8]) -> Vec<u8> {
-    zstd::stream::encode_all(input, 0).unwrap()
-}
-
-#[cfg(feature = "brotli")]
-fn brotli(input: &[u8]) -> Vec<u8> {
-    let mut output = Vec::new();
-    let params = brotli::enc::BrotliEncoderParams::default();
-    brotli::BrotliCompress(&mut std::io::Cursor::new(input), &mut output, &params).unwrap();
-    output
 }
 
 #[test]
@@ -81,7 +78,7 @@ fn decompresses_each_source_before_composing() {
     let composer = MvtComposer::builder()
         .add_source(
             MvtSource::new("roads")
-                .with_compression(composite_mvt::Compression::Gzip)
+                .with_compression(Compression::Gzip)
                 .with_layers(["roads"]),
         )
         .add_source(MvtSource::new("water").with_layers(["water"]))
@@ -127,7 +124,7 @@ fn compresses_the_complete_output_with_dependency_defaults() {
     let composer = MvtComposer::builder()
         .add_source(MvtSource::new("roads").with_layers(["roads"]))
         .add_source(MvtSource::new("water").with_layers(["water"]))
-        .output_compression(composite_mvt::Compression::Gzip)
+        .output_compression(Compression::Gzip)
         .build()
         .unwrap();
 
@@ -142,11 +139,11 @@ fn compresses_the_complete_output_with_zstd_defaults() {
     let first = common::tile_with_layers(&["roads"]);
     let second = common::tile_with_layers(&["water"]);
     let expected_raw: Vec<u8> = first.iter().chain(&second).copied().collect();
-    let expected = zstd(&expected_raw);
+    let expected = fixtures::zstd_encode(&expected_raw);
     let composer = MvtComposer::builder()
         .add_source(MvtSource::new("roads").with_layers(["roads"]))
         .add_source(MvtSource::new("water").with_layers(["water"]))
-        .output_compression(composite_mvt::Compression::Zstd)
+        .output_compression(Compression::Zstd)
         .build()
         .unwrap();
 
@@ -161,11 +158,11 @@ fn compresses_the_complete_output_with_brotli_defaults() {
     let first = common::tile_with_layers(&["roads"]);
     let second = common::tile_with_layers(&["water"]);
     let expected_raw: Vec<u8> = first.iter().chain(&second).copied().collect();
-    let expected = brotli(&expected_raw);
+    let expected = fixtures::brotli_encode(&expected_raw);
     let composer = MvtComposer::builder()
         .add_source(MvtSource::new("roads").with_layers(["roads"]))
         .add_source(MvtSource::new("water").with_layers(["water"]))
-        .output_compression(composite_mvt::Compression::Brotli)
+        .output_compression(Compression::Brotli)
         .build()
         .unwrap();
 
