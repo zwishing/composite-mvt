@@ -233,11 +233,13 @@ impl MvtSource {
             }
 
             let raw = decompress(compression, input.as_ref())?;
+            let mut sample_seen = HashSet::new();
             for layer in read_layers(raw.as_ref())? {
-                if seen.insert(layer.clone()) {
+                if !sample_seen.insert(layer.clone()) || !seen.contains(&layer) {
                     layers.push(layer);
                 }
             }
+            seen.extend(sample_seen);
         }
 
         if !found_sample {

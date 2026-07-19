@@ -204,7 +204,7 @@ impl MvtSource {
 
 自动接口不猜测 Brotli。Brotli 调用方必须使用显式压缩格式方法。`Compression::Other` 也不能用于解析，因为本库不知道对应的解码器。
 
-自动版 `from_mvts()` 要求所有样本最终识别为相同压缩格式。多个样本的图层名称取并集，并保持第一次观察到该图层时的顺序。
+自动版 `from_mvts()` 要求所有样本最终识别为相同压缩格式。多个样本的图层名称取并集，并保持第一次观察到该图层时的顺序；但同一个样本内部的重复声明必须保留，使 Builder 仍可执行同 source 重名校验。
 
 ### 6.3 构建 MvtComposer
 
@@ -363,7 +363,7 @@ pub enum ComposeError {
 [dependencies]
 bytes = "1"
 thiserror = "2"
-fast-mvt = { version = "0.6.0", default-features = false, features = ["reader"] }
+fast-mvt = { version = "=0.6.0", default-features = false, features = ["reader"] }
 flate2 = { version = "1.1.9", optional = true }
 zstd = { version = "0.13.3", optional = true }
 brotli = { version = "8.0.4", optional = true }

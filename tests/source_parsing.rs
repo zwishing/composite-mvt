@@ -1,7 +1,7 @@
 mod common;
 
 use common::tile_with_layers;
-use composite_mvt::{Compression, MvtSource, SourceError};
+use composite_mvt::{BuildError, Compression, DuplicateLayer, MvtComposer, MvtSource, SourceError};
 
 const TILE_WITHOUT_LAYERS: &[u8] = &[0x08, 0x00];
 const TILE_WITH_EMPTY_LAYER_NAME: &[u8] = &[0x1a, 0x04, 0x0a, 0x00, 0x78, 0x02];
@@ -80,6 +80,57 @@ fn preserves_duplicate_layer_names_from_one_sample_for_builder_validation() {
     let source = MvtSource::from_mvt("roads", &bytes).unwrap();
 
     // Then: parsing preserves declarations for the builder's duplicate policy.
+    assert_eq!(
+        source
+            .layers()
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>(),
+        ["roads", "roads"]
+    );
+}
+
+#[test]
+fn multi_sample_parsing_preserves_duplicates_declared_inside_one_sample() {
+    let duplicate = tile_with_layers(&["roads", "roads"]);
+    let additional = tile_with_layers(&["buildings"]);
+
+    let source = MvtSource::from_mvts("mixed", [&duplicate, &additional]).unwrap();
+
+    assert_eq!(
+        source
+            .layers()
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>(),
+        ["roads", "roads", "buildings"]
+    );
+
+    let result = MvtComposer::builder()
+        .duplicate_layer(DuplicateLayer::Allow)
+        .add_source(source)
+        .build();
+    assert!(matches!(
+        result,
+        Err(BuildError::DuplicateLayerName {
+            layer,
+            first_source,
+            second_source,
+        }) if layer.as_ref() == "roads"
+            && first_source.as_ref() == "mixed"
+            && second_source.as_ref() == "mixed"
+    ));
+}
+
+#[test]
+fn explicit_multi_sample_parsing_preserves_later_sample_duplicates() {
+    let first = tile_with_layers(&["roads"]);
+    let duplicate = tile_with_layers(&["roads", "roads"]);
+
+    let source =
+        MvtSource::from_mvts_with_compression("mixed", [&first, &duplicate], Compression::None)
+            .unwrap();
+
     assert_eq!(
         source
             .layers()
