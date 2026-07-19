@@ -77,8 +77,10 @@ unsupported marker and is never a valid source or output configuration.
 `MvtComposerBuilder::validate_duplicate_layers()` can be called independently and does not consume
 or modify the builder. A repeated layer inside one source is always rejected. Between distinct
 sources, `DuplicateLayer::Error` (the default) rejects the repeat and `DuplicateLayer::Allow`
-accepts it. `build()` runs the same duplicate validation along with source ID, layer, and feature
-checks.
+accepts and preserves repeated layers. Opting in may produce non-conformant output because MVT 2.1
+requires layer names within one tile to be byte-for-byte unique. See the [MVT 2.1
+specification](https://github.com/mapbox/vector-tile-spec/blob/master/2.1/README.md#41-layers).
+`build()` runs the same duplicate validation along with source ID, layer, and feature checks.
 
 Sample construction and source decoding return `SourceError`; configuration returns `BuildError`;
 and request composition returns `ComposeError`. A decompression failure identifies the configured
@@ -104,6 +106,46 @@ cargo run --example mixed_sources
 
 It prints `compression=gzip` and `layers=roads,pipeline,valve,building`, after reading the final
 output back as MVT.
+
+## MapLibre browser E2E
+
+The repository includes a local-only MapLibre GL JS example that serves two deterministic z0
+fixtures through `MvtComposer`. The Rust server composes the `roads` and `buildings` inputs and
+returns one gzip-compressed MVT with the matching HTTP response headers.
+
+Regenerate and validate the retained fixtures:
+
+```text
+cargo run --example generate_maplibre_fixtures
+cargo test --example generate_maplibre_fixtures
+```
+
+Install the exact locked browser dependencies once (from `e2e`):
+
+```text
+cd e2e
+npm ci
+npx playwright install chromium
+```
+
+Run the server for manual inspection:
+
+```text
+cargo run --example maplibre_server --features gzip
+```
+
+Open `http://127.0.0.1:3000`. The status panel reaches `ready` after MapLibre can query at least one
+feature from both the `roads` and `buildings` source layers.
+
+Run the automated browser test:
+
+```text
+cd e2e
+npm run test:e2e
+```
+
+This E2E is intentionally local-only. It is not part of the default Rust test suite or CI, and it
+uses no CDN, online basemap, TileJSON endpoint, or screenshot baseline.
 
 ## License
 

@@ -95,6 +95,32 @@ fn decompresses_each_source_before_composing() {
 
 #[cfg(feature = "gzip")]
 #[test]
+fn composes_all_layers_from_concatenated_gzip_members() {
+    // Given: one gzip source declaring layers from two independent members.
+    let first = common::gzip(&common::tile_with_layers(&["roads"]));
+    let second = common::gzip(&common::tile_with_layers(&["buildings"]));
+    let encoded: Vec<u8> = first.into_iter().chain(second).collect();
+    let composer = MvtComposer::builder()
+        .add_source(
+            MvtSource::new("transport")
+                .with_compression(Compression::Gzip)
+                .with_layers(["roads", "buildings"]),
+        )
+        .build()
+        .unwrap();
+
+    // When: the composer receives the concatenated gzip input.
+    let output = composer.compose(&[encoded.as_slice()]).unwrap();
+
+    // Then: the composed tile contains all layers in declaration order.
+    assert_eq!(
+        fixtures::layer_names(&output),
+        vec!["roads".to_owned(), "buildings".to_owned()]
+    );
+}
+
+#[cfg(feature = "gzip")]
+#[test]
 fn reports_the_source_that_failed_decompression() {
     let composer = MvtComposer::builder()
         .add_source(

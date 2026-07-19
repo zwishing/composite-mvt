@@ -1,0 +1,15 @@
+.maplibregl-map {
+  font: 14px/20px system-ui, sans-serif;
+}
+
+#map {
+  background: #f0f0f0;
+}
+
+.maplibregl-popup {
+  color: #111;
+}
+
+.maplibregl-canvas {
+  outline: none;
+}

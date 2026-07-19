@@ -214,6 +214,29 @@ fn automatically_parses_gzip_sample() {
     assert_eq!(source.layers()[0].as_ref(), "roads");
 }
 
+#[cfg(feature = "gzip")]
+#[test]
+fn parses_all_layers_from_concatenated_gzip_members() {
+    // Given: two independent gzip members containing separate MVT layers.
+    let first = common::gzip(&tile_with_layers(&["roads"]));
+    let second = common::gzip(&tile_with_layers(&["buildings"]));
+    let encoded: Vec<u8> = first.into_iter().chain(second).collect();
+
+    // When: public source metadata parsing is requested.
+    let source = MvtSource::from_mvt("transport", &encoded).unwrap();
+
+    // Then: all concatenated members are decoded in order.
+    assert_eq!(source.compression(), Compression::Gzip);
+    assert_eq!(
+        source
+            .layers()
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>(),
+        ["roads", "buildings"]
+    );
+}
+
 #[cfg(feature = "zstd")]
 #[test]
 fn automatically_parses_zstd_sample() {
