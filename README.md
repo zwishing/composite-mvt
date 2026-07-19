@@ -82,7 +82,9 @@ checks.
 
 Sample construction and source decoding return `SourceError`; configuration returns `BuildError`;
 and request composition returns `ComposeError`. A decompression failure identifies the configured
-source that failed. A compose failure never returns a partial composite.
+source that failed. For parsed samples, both an omitted layer name and an explicitly empty layer
+name return `SourceError::MissingLayerName`; explicitly configured empty names remain
+`BuildError::EmptyLayerName`. A compose failure never returns a partial composite.
 
 ## Concurrency and memory
 

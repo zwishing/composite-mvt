@@ -3,6 +3,9 @@ mod common;
 use common::tile_with_layers;
 use composite_mvt::{Compression, MvtSource, SourceError};
 
+const TILE_WITHOUT_LAYERS: &[u8] = &[0x08, 0x00];
+const TILE_WITH_EMPTY_LAYER_NAME: &[u8] = &[0x1a, 0x04, 0x0a, 0x00, 0x78, 0x02];
+
 #[test]
 fn parses_uncompressed_layers_in_order() {
     let bytes = tile_with_layers(&["pipeline", "valve"]);
@@ -45,6 +48,91 @@ fn rejects_empty_input_and_empty_sample_set() {
     assert!(matches!(
         MvtSource::from_mvts::<Vec<&[u8]>, &[u8]>("empty", Vec::new()),
         Err(SourceError::NoSamples)
+    ));
+}
+
+#[test]
+fn rejects_a_nonempty_tile_without_layers() {
+    // Given: valid protobuf bytes containing no MVT layer fields.
+    // When: public source metadata parsing is requested.
+    let result = MvtSource::from_mvt("empty", TILE_WITHOUT_LAYERS);
+
+    // Then: the source reports a zero-layer tile, not empty input.
+    assert!(matches!(result, Err(SourceError::NoLayers)));
+}
+
+#[test]
+fn maps_an_explicit_empty_layer_name_to_missing_layer_name() {
+    // Given: a valid version-2 MVT layer whose encoded name is explicitly empty.
+    // When: public source metadata parsing is requested.
+    let result = MvtSource::from_mvt("empty-name", TILE_WITH_EMPTY_LAYER_NAME);
+
+    // Then: fast-mvt's single missing-or-empty name contract is preserved.
+    assert!(matches!(result, Err(SourceError::MissingLayerName)));
+}
+
+#[test]
+fn preserves_duplicate_layer_names_from_one_sample_for_builder_validation() {
+    // Given: one real sample that declares the same layer twice.
+    let bytes = tile_with_layers(&["roads", "roads"]);
+
+    // When: source metadata is parsed directly.
+    let source = MvtSource::from_mvt("roads", &bytes).unwrap();
+
+    // Then: parsing preserves declarations for the builder's duplicate policy.
+    assert_eq!(
+        source
+            .layers()
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>(),
+        ["roads", "roads"]
+    );
+}
+
+#[cfg(feature = "gzip")]
+#[test]
+fn explicit_raw_compression_does_not_follow_gzip_magic() {
+    // Given: a real gzip-encoded MVT sample.
+    let encoded = common::gzip(&tile_with_layers(&["roads"]));
+
+    // When: the caller explicitly declares the bytes raw.
+    let result = MvtSource::from_mvt_with_compression("roads", &encoded, Compression::None);
+
+    // Then: the explicit setting wins and the compressed bytes are invalid raw MVT.
+    assert!(matches!(result, Err(SourceError::InvalidMvt)));
+}
+
+#[cfg(not(feature = "gzip"))]
+#[test]
+fn public_auto_constructor_reports_disabled_gzip() {
+    assert!(matches!(
+        MvtSource::from_mvt("gzip", &[0x1f, 0x8b, 0x08]),
+        Err(SourceError::CompressionFeatureDisabled {
+            compression: Compression::Gzip
+        })
+    ));
+}
+
+#[cfg(not(feature = "zstd"))]
+#[test]
+fn public_auto_constructor_reports_disabled_zstd() {
+    assert!(matches!(
+        MvtSource::from_mvt("zstd", &[0x28, 0xb5, 0x2f, 0xfd]),
+        Err(SourceError::CompressionFeatureDisabled {
+            compression: Compression::Zstd
+        })
+    ));
+}
+
+#[cfg(not(feature = "brotli"))]
+#[test]
+fn public_explicit_constructor_reports_disabled_brotli() {
+    assert!(matches!(
+        MvtSource::from_mvt_with_compression("brotli", b"encoded", Compression::Brotli,),
+        Err(SourceError::CompressionFeatureDisabled {
+            compression: Compression::Brotli
+        })
     ));
 }
 

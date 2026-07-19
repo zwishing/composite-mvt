@@ -231,18 +231,15 @@ impl MvtComposerBuilder {
 
 `MvtComposer` 不提供重复图层校验方法，因为成功构建的 Composer 已经满足 Builder 建立的不变量。
 
-`DuplicateLayer::Error` 是默认重名策略，`Compression::None` 是默认输出格式。`build()` 依次校验：
+`DuplicateLayer::Error` 是默认重名策略，`Compression::None` 是默认输出格式。`build()` 必须按以下全局遍次依次校验；前一遍必须扫描完全部 source 后，才能开始后一遍：
 
 1. 至少存在一个 source；
-2. source ID 不重复；
-3. 每个 source 至少包含一个图层；
-4. 图层名称非空；
-5. 同一个 source 内部不存在重复图层；
-6. 不同 source 之间的同名图层符合 `DuplicateLayer` 配置；
-7. 每个压缩 source 所需的 Cargo 解码器 feature 已启用；
-8. 不存在使用 `Compression::Other` 的 source。
-9. 输出压缩格式不是 `Compression::Other`；
-10. 输出压缩所需的 Cargo feature 已启用。
+2. 扫描全部 source，确认 source ID 不重复；
+3. 扫描全部 source，确认每个 source 至少包含一个图层；
+4. 扫描全部 source，确认图层名称非空；
+5. 调用公开的 `validate_duplicate_layers()`，同时校验同 source 和跨 source 重名；
+6. 扫描全部 source，先拒绝 `Compression::Other`，再确认所需 Cargo 解码器 feature 已启用；
+7. 最后校验输出压缩，先拒绝 `Compression::Other`，再确认所需 Cargo feature 已启用。
 
 构建成功后，source 顺序永久固定，并生成不可变的 `MvtComposer`。
 
@@ -300,7 +297,6 @@ pub enum SourceError {
     },
     InvalidMvt,
     MissingLayerName,
-    EmptyLayerName,
     NoLayers,
     InconsistentSampleCompression {
         expected: Compression,
@@ -356,6 +352,8 @@ pub enum ComposeError {
     SizeOverflow,
 }
 ```
+
+`fast-mvt 0.6.0` 对缺失 name 字段和显式编码为空字符串的 name 字段都返回 `MvtError::MissingLayerName`，因此 `SourceError::MissingLayerName` 同时覆盖这两种输入。显式创建的 `MvtSource` 仍由 Builder 使用 `BuildError::EmptyLayerName` 拒绝空图层名。
 
 实际 Rust 定义为每个 variant 提供明确的 `#[error]` 展示消息，并通过 `#[source]` 连接底层错误。错误文本包含相关 source、layer 和 compression 上下文。
 

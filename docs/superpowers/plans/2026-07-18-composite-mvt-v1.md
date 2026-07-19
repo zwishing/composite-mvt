@@ -291,10 +291,8 @@ pub enum SourceError {
     },
     #[error("input is not a valid MVT")]
     InvalidMvt,
-    #[error("MVT layer name is missing")]
+    #[error("MVT layer name is missing or empty")]
     MissingLayerName,
-    #[error("MVT layer name is empty")]
-    EmptyLayerName,
     #[error("MVT contains no layers")]
     NoLayers,
     #[error("sample compression mismatch: expected {expected}, got {actual}")]
@@ -1200,19 +1198,25 @@ impl MvtComposerBuilder {
                     id: source.id().clone(),
                 });
             }
+        }
+        for source in &self.sources {
             if source.layers().is_empty() {
                 return Err(BuildError::NoLayers {
                     source_id: source.id().clone(),
                 });
             }
+        }
+        for source in &self.sources {
             if source.layers().iter().any(|layer| layer.as_ref().is_empty()) {
                 return Err(BuildError::EmptyLayerName {
                     source_id: source.id().clone(),
                 });
             }
-            validate_source_compression(source)?;
         }
         self.validate_duplicate_layers()?;
+        for source in &self.sources {
+            validate_source_compression(source)?;
+        }
         validate_output_compression(self.output_compression)
     }
 }

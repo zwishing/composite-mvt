@@ -115,11 +115,17 @@ impl MvtComposerBuilder {
                     id: source.id().clone(),
                 });
             }
+        }
+
+        for source in &self.sources {
             if source.layers().is_empty() {
                 return Err(BuildError::NoLayers {
                     source_id: source.id().clone(),
                 });
             }
+        }
+
+        for source in &self.sources {
             if source
                 .layers()
                 .iter()
@@ -129,10 +135,14 @@ impl MvtComposerBuilder {
                     source_id: source.id().clone(),
                 });
             }
-            validate_source_compression(source)?;
         }
 
         self.validate_duplicate_layers()?;
+
+        for source in &self.sources {
+            validate_source_compression(source)?;
+        }
+
         validate_output_compression(self.output_compression)
     }
 }

@@ -32,12 +32,9 @@ pub enum SourceError {
     /// The decoded bytes could not be parsed as an MVT.
     #[error("input is not a valid MVT")]
     InvalidMvt,
-    /// An MVT layer omitted its required name.
-    #[error("MVT layer name is missing")]
+    /// An MVT layer omitted its required name or explicitly encoded it as empty.
+    #[error("MVT layer name is missing or empty")]
     MissingLayerName,
-    /// An MVT layer name is empty.
-    #[error("MVT layer name is empty")]
-    EmptyLayerName,
     /// An MVT contains no layers.
     #[error("MVT contains no layers")]
     NoLayers,

@@ -16,6 +16,14 @@ fn detects_known_frame_signatures() {
         detect_compression(&[0x50, 0x2a, 0x4d, 0x18]),
         Compression::Zstd
     );
+    assert_eq!(
+        detect_compression(&[0x5f, 0x2a, 0x4d, 0x18]),
+        Compression::Zstd
+    );
+    assert_eq!(
+        detect_compression(&[0x60, 0x2a, 0x4d, 0x18]),
+        Compression::None
+    );
     assert_eq!(detect_compression(&[0x1a, 0x00]), Compression::None);
 }
 
