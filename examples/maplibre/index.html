@@ -1,20 +1,133 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Composite MVT MapLibre E2E</title>
-    <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/maplibre-gl.css">
-    <style>
-      html, body, #map { width: 100%; height: 100%; margin: 0; }
-      #status { position: fixed; z-index: 2; top: 12px; left: 12px; padding: 8px 10px; background: white; font: 14px system-ui, sans-serif; }
-    </style>
-  </head>
-  <body>
-    <div id="map" aria-label="Map"></div>
-    <div id="status" role="status" aria-live="polite" data-state="loading" data-roads="0" data-buildings="0">loading</div>
-    <script src="/maplibre-gl.js"></script>
-    <script src="/app.js"></script>
-  </body>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>合并 MVT</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/maplibre-gl.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 14px system-ui, sans-serif; color: #172033; }
+    aside { position: fixed; z-index: 2; width: 760px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); margin: 12px; padding: 16px; overflow: auto; background: white; border-radius: 8px; box-shadow: 0 4px 20px #0002; }
+    h1 { margin: 0 0 12px; font-size: 18px; }
+    #sources { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .source { display: grid; grid-template-columns: 1fr 90px; gap: 8px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
+    .source input:first-child { grid-column: 1 / -1; }
+    label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #596275; }
+    input, select, button { width: 100%; padding: 8px; border: 1px solid #bcc4d1; border-radius: 4px; background: white; }
+    button { cursor: pointer; }
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    .primary { color: white; border-color: #1769e0; background: #1769e0; }
+    #status { margin: 10px 0 0; min-height: 20px; overflow-wrap: anywhere; }
+    #map { width: 100vw; height: 100vh; background: #eef2f6; }
+    @media (max-width: 700px) { #sources { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>合并矢量瓦片</h1>
+    <form id="sources"></form>
+    <div class="actions">
+      <button id="add" type="button">添加瓦片源</button>
+      <button class="primary" type="submit" form="sources">应用并显示</button>
+    </div>
+    <div id="status" role="status"></div>
+  </aside>
+  <div id="map"></div>
+  <script src="/maplibre-gl.js"></script>
+  <script>
+    const form = document.querySelector('#sources');
+    const status = document.querySelector('#status');
+    let map;
+    let layerIds = [];
+
+    function addSource(values = {}) {
+      const row = document.createElement('div');
+      row.className = 'source';
+      row.innerHTML = `
+        <input class="url" aria-label="瓦片 URL" required placeholder="http://.../{z}/{x}/{y}.pbf" value="${values.url || ''}">
+        <input class="layers" aria-label="图层名" required placeholder="source-layer，多个用逗号分隔" value="${values.layers || ''}">
+        <select class="compression" aria-label="压缩"><option value="none">未压缩</option><option value="gzip">gzip</option></select>
+        <input class="color" aria-label="颜色" type="color" value="${values.color || '#1769e0'}">
+        <label>minzoom <input class="minzoom" aria-label="最小缩放" type="number" min="0" max="24" value="${values.minzoom ?? 0}"></label>
+        <label>maxzoom <input class="maxzoom" aria-label="最大缩放" type="number" min="0" max="24" value="${values.maxzoom ?? 14}"></label>
+        <button class="remove" type="button">删除</button>`;
+      row.querySelector('.compression').value = values.compression || 'none';
+      row.querySelector('.remove').onclick = () => row.remove();
+      form.append(row);
+    }
+
+    document.querySelector('#add').onclick = () => addSource();
+    addSource({ url: '/fixtures/demo/{z}/{x}/{y}.pbf', layers: 'geolines,centroids,countries', color: '#607d9d', minzoom: 2, maxzoom: 6 });
+    addSource({ url: '/fixtures/open/{z}/{x}/{y}.pbf', layers: 'landuse', color: '#d8bd8a', minzoom: 2, maxzoom: 6 });
+    map = new maplibregl.Map({
+      container: 'map',
+      style: { version: 8, sources: {}, layers: [] },
+      center: [0, 20],
+      zoom: 4
+    });
+
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const sources = [...document.querySelectorAll('.source')].map((row) => {
+        const template = row.querySelector('.url').value.trim();
+        return {
+          url: /^https?:\/\//.test(template) ? template : `${location.origin}${template.startsWith('/') ? '' : '/'}${template}`,
+          layers: row.querySelector('.layers').value.split(',').map((layer) => layer.trim()).filter(Boolean),
+          compression: row.querySelector('.compression').value,
+          color: row.querySelector('.color').value,
+          minzoom: Number(row.querySelector('.minzoom').value),
+          maxzoom: Number(row.querySelector('.maxzoom').value)
+        };
+      });
+      if (!sources.length) return void (status.textContent = '请至少添加一个瓦片源');
+
+      status.textContent = '正在配置…';
+      const grouped = new Map();
+      sources.forEach((source) => {
+        const group = grouped.get(source.url) || { ...source, layers: new Set() };
+        source.layers.forEach((layer) => group.layers.add(layer));
+        grouped.set(source.url, group);
+      });
+      const body = [...grouped.values()].map((source) => `${source.url}\t${[...source.layers].join(',')}\t${source.compression}`).join('\n');
+      const response = await fetch('/sources', { method: 'POST', headers: { 'content-type': 'text/plain' }, body });
+      if (!response.ok) return void (status.textContent = await response.text());
+
+      layerIds.forEach((id) => map.getLayer(id) && map.removeLayer(id));
+      if (map.getSource('composite')) map.removeSource('composite');
+      map.addSource('composite', {
+        type: 'vector',
+        tiles: [`${location.origin}/tiles/{z}/{x}/{y}.pbf`],
+        minzoom: Math.min(...sources.map((source) => source.minzoom)),
+        maxzoom: Math.max(...sources.map((source) => source.maxzoom))
+      });
+      layerIds = [];
+      const renderers = [
+        ['Polygon', 'fill', (color) => ({ 'fill-color': color, 'fill-opacity': 0.65 })],
+        ['LineString', 'line', (color) => ({ 'line-color': color, 'line-width': 2 })],
+        ['Point', 'circle', (color) => ({ 'circle-color': color, 'circle-radius': 4 })]
+      ];
+      sources.forEach((source, sourceIndex) => source.layers.forEach((layer, layerIndex) => {
+        renderers.forEach(([geometry, type, paint]) => {
+          const id = `layer-${sourceIndex}-${layerIndex}-${type}`;
+          map.addLayer({
+            id,
+            type,
+            source: 'composite',
+            'source-layer': layer,
+            minzoom: source.minzoom,
+            maxzoom: source.maxzoom,
+            filter: ['==', ['geometry-type'], geometry],
+            paint: paint(source.color)
+          });
+          layerIds.push(id);
+        });
+      }));
+      const layerCount = sources.reduce((count, source) => count + source.layers.length, 0);
+      status.textContent = `已合并 ${grouped.size} 个瓦片源，显示 ${layerCount} 个图层`;
+    };
+    map.on('load', () => form.requestSubmit());
+  </script>
+</body>
 </html>

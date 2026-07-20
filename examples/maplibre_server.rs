@@ -1,7 +1,4 @@
 #[cfg(feature = "gzip")]
-#[path = "maplibre_server/assets.rs"]
-mod assets;
-#[cfg(feature = "gzip")]
 #[path = "maplibre_server/http.rs"]
 mod http;
 #[cfg(feature = "gzip")]

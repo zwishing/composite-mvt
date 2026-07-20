@@ -107,45 +107,24 @@ cargo run --example mixed_sources
 It prints `compression=gzip` and `layers=roads,pipeline,valve,building`, after reading the final
 output back as MVT.
 
-## MapLibre browser E2E
+## MapLibre browser example
 
-The repository includes a local-only MapLibre GL JS example that serves two deterministic z0
-fixtures through `MvtComposer`. The Rust server composes the `roads` and `buildings` inputs and
-returns one gzip-compressed MVT with the matching HTTP response headers.
+The browser example is one plain HTML page. It lets you add any number of vector-tile URL templates,
+the source-layer names, input compression, render type, and color. The Rust backend saves that source
+configuration, fetches the matching tiles, combines them with `MvtComposer`, and returns one MVT.
 
-Regenerate and validate the retained fixtures:
-
-```text
-cargo run --example generate_maplibre_fixtures
-cargo test --example generate_maplibre_fixtures
-```
-
-Install the exact locked browser dependencies once (from `e2e`):
-
-```text
-cd e2e
-npm ci
-npx playwright install chromium
-```
-
-Run the server for manual inspection:
+Run the example:
 
 ```text
 cargo run --example maplibre_server --features gzip
 ```
 
-Open `http://127.0.0.1:3000`. The status panel reaches `ready` after MapLibre can query at least one
-feature from both the `roads` and `buildings` source layers.
-
-Run the automated browser test:
-
-```text
-cd e2e
-npm run test:e2e
-```
-
-This E2E is intentionally local-only. It is not part of the default Rust test suite or CI, and it
-uses no CDN, online basemap, TileJSON endpoint, or screenshot baseline.
+Open `http://127.0.0.1:3010`, add or remove tile sources, then select **应用并显示**. Each row is one
+MVT source and accepts comma-separated source-layer names; point, line, and polygon features are
+styled automatically. The defaults merge bundled Europe tiles at z=2 through z=5 from the MapLibre
+demo source containing `geolines`, `centroids`, and `countries`, with OpenFreeMap tiles containing
+`landuse`, so the example works offline across those zoom levels. The example uses the system `curl`
+command for HTTP/HTTPS tile fetching and includes MapLibre GL JS 5.24.0 locally.
 
 ## License
 
