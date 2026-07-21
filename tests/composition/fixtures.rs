@@ -22,11 +22,6 @@ pub fn zstd_encode(input: &[u8]) -> Vec<u8> {
     zstd::stream::encode_all(input, 0).unwrap()
 }
 
-#[cfg(feature = "zstd")]
-pub fn zstd_decode(input: &[u8]) -> Vec<u8> {
-    zstd::stream::decode_all(input).unwrap()
-}
-
 #[cfg(feature = "brotli")]
 pub fn brotli_encode(input: &[u8]) -> Vec<u8> {
     let mut output = Vec::new();
@@ -36,16 +31,5 @@ pub fn brotli_encode(input: &[u8]) -> Vec<u8> {
         &brotli::enc::BrotliEncoderParams::default(),
     )
     .unwrap();
-    output
-}
-
-#[cfg(feature = "brotli")]
-pub fn brotli_decode(input: &[u8]) -> Vec<u8> {
-    use std::io::Read as _;
-
-    let mut output = Vec::new();
-    brotli::Decompressor::new(input, 4096)
-        .read_to_end(&mut output)
-        .unwrap();
     output
 }

@@ -15,6 +15,9 @@
     .source { display: grid; grid-template-columns: 1fr 90px; gap: 8px; padding: 12px; border: 1px solid #ddd; border-radius: 6px; }
     .source input:first-child { grid-column: 1 / -1; }
     label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #596275; }
+    .zoom-controls { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .zoom-controls label { display: grid; grid-template-columns: max-content minmax(72px, 1fr); }
+    .zoom-controls input { min-width: 0; }
     input, select, button { width: 100%; padding: 8px; border: 1px solid #bcc4d1; border-radius: 4px; background: white; }
     button { cursor: pointer; }
     .actions { display: flex; gap: 8px; margin-top: 12px; }
@@ -29,6 +32,7 @@
     <h1>合并矢量瓦片</h1>
     <form id="sources"></form>
     <div class="actions">
+      <button id="preset-toggle" type="button" aria-pressed="false" disabled>切换到在线数据</button>
       <button id="add" type="button">添加瓦片源</button>
       <button class="primary" type="submit" form="sources">应用并显示</button>
     </div>
@@ -39,8 +43,18 @@
   <script>
     const form = document.querySelector('#sources');
     const status = document.querySelector('#status');
+    const presetToggle = document.querySelector('#preset-toggle');
+    const LOCAL_SOURCES = [
+      { url: '/fixtures/demo/{z}/{x}/{y}.pbf', layers: 'geolines,centroids,countries', color: '#607d9d', minzoom: 2, maxzoom: 6 },
+      { url: '/fixtures/open/{z}/{x}/{y}.pbf', layers: 'landuse', color: '#d8bd8a', minzoom: 2, maxzoom: 6 }
+    ];
+    const ONLINE_SOURCES = [
+      { url: 'https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf', layers: 'geolines,centroids,countries', color: '#607d9d', minzoom: 0, maxzoom: 14 },
+      { url: 'https://tiles.openfreemap.org/planet/latest/{z}/{x}/{y}.pbf', layers: 'landuse', color: '#d8bd8a', minzoom: 0, maxzoom: 14 }
+    ];
     let map;
     let layerIds = [];
+    let usingOnlineSources = false;
 
     function addSource(values = {}) {
       const row = document.createElement('div');
@@ -50,17 +64,30 @@
         <input class="layers" aria-label="图层名" required placeholder="source-layer，多个用逗号分隔" value="${values.layers || ''}">
         <select class="compression" aria-label="压缩"><option value="none">未压缩</option><option value="gzip">gzip</option></select>
         <input class="color" aria-label="颜色" type="color" value="${values.color || '#1769e0'}">
-        <label>minzoom <input class="minzoom" aria-label="最小缩放" type="number" min="0" max="24" value="${values.minzoom ?? 0}"></label>
-        <label>maxzoom <input class="maxzoom" aria-label="最大缩放" type="number" min="0" max="24" value="${values.maxzoom ?? 14}"></label>
+        <div class="zoom-controls">
+          <label>minzoom <input class="minzoom" aria-label="最小缩放" type="number" min="0" max="24" value="${values.minzoom ?? 0}"></label>
+          <label>maxzoom <input class="maxzoom" aria-label="最大缩放" type="number" min="0" max="24" value="${values.maxzoom ?? 14}"></label>
+        </div>
         <button class="remove" type="button">删除</button>`;
       row.querySelector('.compression').value = values.compression || 'none';
       row.querySelector('.remove').onclick = () => row.remove();
       form.append(row);
     }
 
+    function selectPreset(useOnlineSources) {
+      usingOnlineSources = useOnlineSources;
+      form.replaceChildren();
+      (useOnlineSources ? ONLINE_SOURCES : LOCAL_SOURCES).forEach((source) => addSource(source));
+      presetToggle.textContent = useOnlineSources ? '切换到本地数据' : '切换到在线数据';
+      presetToggle.setAttribute('aria-pressed', String(useOnlineSources));
+    }
+
     document.querySelector('#add').onclick = () => addSource();
-    addSource({ url: '/fixtures/demo/{z}/{x}/{y}.pbf', layers: 'geolines,centroids,countries', color: '#607d9d', minzoom: 2, maxzoom: 6 });
-    addSource({ url: '/fixtures/open/{z}/{x}/{y}.pbf', layers: 'landuse', color: '#d8bd8a', minzoom: 2, maxzoom: 6 });
+    presetToggle.onclick = () => {
+      selectPreset(!usingOnlineSources);
+      form.requestSubmit();
+    };
+    selectPreset(false);
     map = new maplibregl.Map({
       container: 'map',
       style: { version: 8, sources: {}, layers: [] },
@@ -127,7 +154,10 @@
       const layerCount = sources.reduce((count, source) => count + source.layers.length, 0);
       status.textContent = `已合并 ${grouped.size} 个瓦片源，显示 ${layerCount} 个图层`;
     };
-    map.on('load', () => form.requestSubmit());
+    map.on('load', () => {
+      presetToggle.disabled = false;
+      form.requestSubmit();
+    });
   </script>
 </body>
 </html>

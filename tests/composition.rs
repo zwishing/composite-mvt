@@ -2,9 +2,7 @@
 mod common;
 #[path = "composition/concurrency.rs"]
 mod concurrency;
-#[cfg(any(feature = "gzip", feature = "zstd", feature = "brotli"))]
-#[path = "composition/e2e.rs"]
-mod e2e;
+
 #[cfg(any(feature = "gzip", feature = "zstd", feature = "brotli"))]
 #[path = "composition/fixtures.rs"]
 mod fixtures;

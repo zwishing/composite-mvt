@@ -1,5 +1,7 @@
 # composite-mvt
 
+[简体中文](README_CN.md)
+
 `composite-mvt` composes a fixed set of Mapbox Vector Tile (MVT) sources into one response body.
 It is deliberately a byte-level compositor: it does not parse, merge, rename, or validate request
 tile layers at compose time. Configure the source metadata once, then supply one byte slice per
@@ -125,6 +127,12 @@ styled automatically. The defaults merge bundled Europe tiles at z=2 through z=5
 demo source containing `geolines`, `centroids`, and `countries`, with OpenFreeMap tiles containing
 `landuse`, so the example works offline across those zoom levels. The example uses an asynchronous
 Reqwest client to fetch configured tile sources concurrently and includes MapLibre GL JS 5.24.0 locally.
+
+## Testing
+
+```text
+cargo test --all-targets --all-features
+```
 
 ## License
 
