@@ -10,8 +10,9 @@ mod state;
 mod tests;
 
 #[cfg(feature = "gzip")]
-fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    state::run_from_environment()
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    state::run_from_environment().await
 }
 
 #[cfg(not(feature = "gzip"))]

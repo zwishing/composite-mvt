@@ -123,8 +123,8 @@ Open `http://127.0.0.1:3010`, add or remove tile sources, then select **应用�
 MVT source and accepts comma-separated source-layer names; point, line, and polygon features are
 styled automatically. The defaults merge bundled Europe tiles at z=2 through z=5 from the MapLibre
 demo source containing `geolines`, `centroids`, and `countries`, with OpenFreeMap tiles containing
-`landuse`, so the example works offline across those zoom levels. The example uses the system `curl`
-command for HTTP/HTTPS tile fetching and includes MapLibre GL JS 5.24.0 locally.
+`landuse`, so the example works offline across those zoom levels. The example uses an asynchronous
+Reqwest client to fetch configured tile sources concurrently and includes MapLibre GL JS 5.24.0 locally.
 
 ## License
 

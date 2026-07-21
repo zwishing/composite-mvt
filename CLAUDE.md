@@ -21,7 +21,7 @@ Key routing rules:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **composite-mvt** (305 symbols, 614 relationships, 19 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **composite-mvt** (405 symbols, 820 relationships, 28 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
@@ -60,10 +60,5 @@ This project is indexed by GitNexus as **composite-mvt** (305 symbols, 614 relat
 | Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
 | Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-| Work in the Tests area (50 symbols) | `.claude/skills/generated/tests/SKILL.md` |
-| Work in the Compression area (16 symbols) | `.claude/skills/generated/compression/SKILL.md` |
-| Work in the Composition area (13 symbols) | `.claude/skills/generated/composition/SKILL.md` |
-| Work in the Cluster_2 area (6 symbols) | `.claude/skills/generated/cluster-2/SKILL.md` |
-| Work in the Examples area (4 symbols) | `.claude/skills/generated/examples/SKILL.md` |
 
 <!-- gitnexus:end -->

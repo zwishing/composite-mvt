@@ -1,8 +1,10 @@
 use std::error::Error;
-use std::process::Command;
-use std::sync::RwLock;
+use std::sync::Arc;
+use std::time::Duration;
 
 use composite_mvt::{Compression, MvtComposer, MvtSource};
+use futures_util::future::try_join_all;
+use tokio::sync::RwLock;
 
 pub(crate) const DEFAULT_PORT: u16 = 3010;
 
@@ -18,16 +20,21 @@ struct ConfiguredSources {
 
 pub(crate) struct AppState {
     configured: RwLock<Option<ConfiguredSources>>,
+    client: reqwest::Client,
 }
 
 impl AppState {
     pub(crate) fn new() -> Self {
         Self {
             configured: RwLock::new(None),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .expect("default HTTP client configuration is valid"),
         }
     }
 
-    pub(crate) fn configure(&self, body: &str) -> Result<(), String> {
+    pub(crate) async fn configure(&self, body: &str) -> Result<(), String> {
         let mut builder = MvtComposer::builder();
         let mut sources = Vec::new();
 
@@ -98,29 +105,22 @@ impl AppState {
             sources,
             composer: builder.build().map_err(|error| error.to_string())?,
         };
-        *self
-            .configured
-            .write()
-            .map_err(|_| "configuration lock is poisoned")? = Some(configured);
+        *self.configured.write().await = Some(configured);
         Ok(())
     }
 
-    pub(crate) fn compose_tile(&self, z: &str, x: &str, y: &str) -> Result<Vec<u8>, String> {
-        let configured = self
-            .configured
-            .read()
-            .map_err(|_| "configuration lock is poisoned")?;
+    pub(crate) async fn compose_tile(&self, z: &str, x: &str, y: &str) -> Result<Vec<u8>, String> {
+        let configured = self.configured.read().await;
         let configured = configured.as_ref().ok_or("configure sources first")?;
-        let mut inputs = Vec::with_capacity(configured.sources.len());
-
-        for source in &configured.sources {
+        let requests = configured.sources.iter().map(|source| {
             let url = source
                 .url
                 .replace("{z}", z)
                 .replace("{x}", x)
                 .replace("{y}", y);
-            inputs.push(fetch_http(&url, source.gzip)?);
-        }
+            fetch_http(&self.client, url, source.gzip)
+        });
+        let inputs = try_join_all(requests).await?;
         let borrowed = inputs.iter().map(Vec::as_slice).collect::<Vec<_>>();
         configured
             .composer
@@ -268,7 +268,7 @@ pub(crate) fn fixture(path: &str) -> Option<&'static [u8]> {
     }
 }
 
-pub(crate) fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
+pub(crate) async fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
     let port = match std::env::var("PORT") {
         Ok(value) => value
             .parse::<u16>()
@@ -277,48 +277,26 @@ pub(crate) fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>>
         Err(std::env::VarError::NotUnicode(_)) => return Err("PORT is not valid Unicode".into()),
     };
 
-    let state = std::sync::Arc::new(AppState::new());
-
-    let address = format!("127.0.0.1:{port}");
-    let server =
-        tiny_http::Server::http(&address).map_err(|error| -> Box<dyn Error + Send + Sync> {
-            format!("failed to bind {address}: {error}").into()
-        })?;
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let listener = tokio::net::TcpListener::bind(address).await?;
     println!("listening on http://{address}");
-
-    for request in server.incoming_requests() {
-        let state = std::sync::Arc::clone(&state);
-        std::thread::spawn(move || {
-            if let Err(error) = crate::http::serve(request, &state) {
-                eprintln!("request handling failed: {error}");
-            }
-        });
-    }
-
+    axum::serve(listener, crate::http::router(Arc::new(AppState::new()))).await?;
     Ok(())
 }
 
-fn fetch_http(url: &str, gzip: bool) -> Result<Vec<u8>, String> {
+async fn fetch_http(client: &reqwest::Client, url: String, gzip: bool) -> Result<Vec<u8>, String> {
     let accept_encoding = if gzip { "gzip" } else { "identity" };
-    let output = Command::new("curl")
-        .args([
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--location",
-            "--max-time",
-            "30",
-            "--header",
-            &format!("Accept-Encoding: {accept_encoding}"),
-            url,
-        ])
-        .output()
-        .map_err(|error| format!("failed to run curl: {error}"))?;
-
-    if output.status.success() {
-        Ok(output.stdout)
-    } else {
-        let message = String::from_utf8_lossy(&output.stderr);
-        Err(format!("failed to fetch {url}: {}", message.trim()))
-    }
+    let response = client
+        .get(&url)
+        .header(reqwest::header::ACCEPT_ENCODING, accept_encoding)
+        .send()
+        .await
+        .map_err(|error| format!("failed to fetch {url}: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("failed to fetch {url}: {error}"))?;
+    response
+        .bytes()
+        .await
+        .map(|bytes| bytes.to_vec())
+        .map_err(|error| format!("failed to read {url}: {error}"))
 }
